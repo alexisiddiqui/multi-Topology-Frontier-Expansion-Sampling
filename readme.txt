@@ -29,3 +29,12 @@ $ python SDS.py
 
 
 
+multi-Topology Frontier expansion sampling (T-FES): a method to enhance the conformational sampling in molecular dynamics simulations using multiple topologies
+
+This extends the existing FES script to perform FES across multiple topologies of a protein. Each topology run is combined together during the PCA. 
+When selecting vertices from the convex hull the corresponding topology is also selected and run. In addition, the script has been modified to allow for the inclusion of existing trajecories as a prior.
+T-FES will then expand sampling from this.
+
+Finally T-FES can also be run using CUDA MPS using the corresponding script.
+
+T-FES accepts topologies in the Gromacs format but can be easily modified to accept other formats. Some existing topologies are provided in the RW_10 directory.

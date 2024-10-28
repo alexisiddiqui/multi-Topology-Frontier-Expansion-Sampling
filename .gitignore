@@ -37,6 +37,7 @@ Thumbs.db
 # dont ignore RW_10 
 
 !RW_10
+# !RW_10/*/*.xtc
 
 # dont ign
 
