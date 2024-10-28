@@ -5,10 +5,10 @@ conda create -n FES python=3.11 ipykernel -y
 
 # Activate the environment
 eval "$(conda shell.bash hook)"
-conda activate FES
+source activate FES # may need to change this to 'source activate' if running on HPC
 
 # Install primary dependencies through conda
-conda install -c conda-forge \
+conda install -n FES -c conda-forge \
     numpy \
     matplotlib \
     scipy \
