@@ -1,0 +1,65 @@
+; In this topology include file, you will find position restraint
+; entries for all the heavy atoms in your original pdb file.
+; This means that all the protons which were added by pdb2gmx are
+; not restrained.
+
+[ position_restraints ]
+; atom  type      fx      fy      fz
+     5     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+    37     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+    43     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+    55     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+    75     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+    86     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   105     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   128     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   142     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   148     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   169     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   183     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   198     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   204     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   215     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   237     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   247     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   271     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   290     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   309     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   333     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   354     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   374     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   395     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   409     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   419     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   441     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   451     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   458     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   477     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   487     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   504     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   518     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   538     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   554     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   575     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   582     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   589     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   600     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   624     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   634     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   656     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   680     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   694     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   708     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   728     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   750     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   761     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   771     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   786     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   798     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   808     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   825     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   849     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   863     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   874     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   881     1  POSRESca_FC  POSRESca_FC  POSRESca_FC
+   888     1  POSRESca_FC  POSRESca_FC  POSRESca_FC

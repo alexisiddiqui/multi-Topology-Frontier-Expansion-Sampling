@@ -1,0 +1,42 @@
+# Ignore node_modules directory
+node_modules/
+
+# Ignore log files
+*.log
+
+# Ignore build directories
+dist/
+build/
+
+# Ignore environment variables file
+.env
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore IDE-specific files
+.vscode/
+.idea/
+*.iml
+
+
+# ignore trajectory files
+
+
+
+*/**.xtc
+
+*/**.dcd
+
+
+# ignore outputs
+
+*FES_output*
+
+# dont ignore RW_10 
+
+!RW_10
+
+# dont ign
+
