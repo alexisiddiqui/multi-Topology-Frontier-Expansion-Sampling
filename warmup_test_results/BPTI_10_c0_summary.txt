@@ -1,0 +1,5 @@
+Timestep (fs)	Total Steps	Successful Replicates	Energy StdDev	Temp StdDev
+0.5	12000	5/5	1089.87	2.05
+1.0	12000	5/5	917.18	1.76
+1.5	11979	5/5	744.18	1.83
+2.0	12000	5/5	588.59	1.87
