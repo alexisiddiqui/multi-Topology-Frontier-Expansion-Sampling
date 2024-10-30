@@ -1281,7 +1281,7 @@ def main():
     # Get absolute paths for directories
     current_dir = os.getcwd()
     base_input_dir = os.path.join(current_dir, "RW_10/BPTI")
-    base_output_dir = os.path.join(current_dir, "BPTI_FES_output")
+    base_output_dir = os.path.join(current_dir, "BPTI_FES_output_EQ_test")
     
     print(f"Input directory: {base_input_dir}")
     print(f"Output directory: {base_output_dir}")
