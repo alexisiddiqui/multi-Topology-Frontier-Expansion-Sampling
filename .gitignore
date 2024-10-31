@@ -29,6 +29,7 @@ Thumbs.db
 
 */**.dcd
 
+RW_10/*
 
 # ignore outputs
 
@@ -36,8 +37,5 @@ Thumbs.db
 
 # dont ignore RW_10 
 
-!RW_10
-# !RW_10/*/*.xtc
-
-# dont ign
+!RW_10/BPTI/*
 

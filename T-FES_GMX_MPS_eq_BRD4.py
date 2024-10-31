@@ -29,7 +29,7 @@ from contextlib import contextmanager
 import time
 import os
 
-
+num_threads = 16
 
 
 def check_cuda_mps_status():
@@ -559,8 +559,8 @@ def run_seed_simulation(simulation: omma.Simulation,
     simulation.step(2000)
     simulation.integrator.setStepSize(0.002*unit.picoseconds)
 
-    simulation.reporters.append(omma.DCDReporter(dcd_file, 500))
-    simulation.reporters.append(omma.StateDataReporter(log_file, 500, 
+    simulation.reporters.append(omma.DCDReporter(dcd_file, 5000))
+    simulation.reporters.append(omma.StateDataReporter(log_file, 5000, 
                                                      step=True, 
                                                      potentialEnergy=True, 
                                                      temperature=True,
@@ -605,8 +605,8 @@ def run_short_eq(simulation: omma.Simulation, inpcrd: omma.AmberInpcrdFile, step
     eq_dcd = os.path.join(eq_dir, 'eq.dcd')
     eq_log = os.path.join(eq_dir, 'eq_log.txt')
     
-    simulation.reporters.append(omma.DCDReporter(eq_dcd, 100))
-    simulation.reporters.append(omma.StateDataReporter(eq_log, 100, 
+    simulation.reporters.append(omma.DCDReporter(eq_dcd, 500))
+    simulation.reporters.append(omma.StateDataReporter(eq_log, 500, 
                                                      step=True, 
                                                      potentialEnergy=True, 
                                                      temperature=True,
@@ -656,7 +656,7 @@ def combine_trajectories(systems: List[SystemConfig], cycle: int, source_dir: st
     start_idx = 0
     
     # Create process pool for parallel loading
-    with multiprocessing.Pool(processes=min(multiprocessing.cpu_count(), 4)) as pool:
+    with multiprocessing.Pool(processes=min(multiprocessing.cpu_count(), num_threads)) as pool:
         
         for system in systems:
             print(f"\nProcessing trajectories for {system.system_name}")
@@ -1090,7 +1090,7 @@ def track_trajectory_frames(systems: List[SystemConfig], cycle: int, source_dir:
     cumulative_offset = 0
     
     # Create process pool for parallel tracking
-    with multiprocessing.Pool(processes=min(multiprocessing.cpu_count(), 4)) as pool:
+    with multiprocessing.Pool(processes=min(multiprocessing.cpu_count(), num_threads)) as pool:
         
         for system in systems:
             info = TrajectoryInfo(system_name=system.system_name)
@@ -1260,7 +1260,7 @@ def process_cycles(systems: List[SystemConfig], num_cycles: int, source_dir: str
         gpu_info = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.total', '--format=csv,noheader,nounits'])
         gpu_memory = int(gpu_info)
         # More conservative estimate for CUDA overhead
-        max_concurrent = min(4, gpu_memory // 750)  # set to 16 for A100 | 750MB for BRD4 250MB for BPTI
+        max_concurrent = min(num_threads, gpu_memory // 750)  # set to 16 for A100 | 750MB for BRD4 250MB for BPTI
     except:
         print("Warning: Could not determine GPU memory. Using default concurrency of 2.")
         max_concurrent = 2
@@ -1374,7 +1374,7 @@ def main():
     # Get absolute paths for directories
     current_dir = os.getcwd()
     base_input_dir = os.path.join(current_dir, "RW_10/BRD4")
-    base_output_dir = os.path.join(current_dir, "BRD4_FES_output_EQ_test")
+    base_output_dir = os.path.join(current_dir, "RW_10_FES_output/BRD4")
 
 
     residue_list =  np.load('hdx_residues/all_hdx_residues.npz')["BRD4"]
@@ -1426,7 +1426,7 @@ def main():
     
     # Process all cycles using shared PCA space
     os.chdir(base_output_dir)
-    process_cycles(systems, num_cycles=3, source_dir=base_output_dir)
+    process_cycles(systems, num_cycles=20, source_dir=base_output_dir)
     
     overall_end_time = time.time()
     print("\nAll systems processed successfully.")

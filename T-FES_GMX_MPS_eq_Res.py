@@ -231,49 +231,26 @@ class SystemConfig:
     xtc_file: Optional[str] = None  # Added field for XTC file
     num_cycle: int = 30
     lis: List[int] = field(default_factory=list)
-    # pdb_path: Optional[str] = None
+    pdb_path: Optional[str] = None
     ca_indices: Optional[np.ndarray] = None
 
+class SharedPCASpace:
+    def __init__(self):
+        self.pca: Optional[PCA] = None
+        self.combined_coords: Optional[np.ndarray] = None
+        self.system_indices: Dict[str, np.ndarray] = {}
+        self.reference_structure = None
+        self.ca_indices = None
 
-def get_ca_indices_from_prmtop(prmtop_file: str, residue_list: np.ndarray) -> np.ndarray:
-    """
-    Get CA atom indices from prmtop file for specified residues.
-    
-    Args:
-        prmtop_file (str): Path to Amber topology file
-        residue_list (np.ndarray): Array of residue numbers to select
+    def initialize_reference(self, reference_pdb: str) -> None:
+        """
+        Initialize the reference structure for alignment.
         
-    Returns:
-        np.ndarray: Array of CA atom indices
-    """
-    # Load topology using parmed
-    parm = pmd.load_file(prmtop_file)
-    
-    # Find CA atoms for specified residues
-    ca_indices = []
-    for atom in parm.atoms:
-        if (atom.name == 'CA' and 
-            atom.residue.number in residue_list):
-            ca_indices.append(atom.idx)
-    
-    return np.array(ca_indices)
-# class SharedPCASpace:
-#     def __init__(self):
-#         self.pca: Optional[PCA] = None
-#         self.combined_coords: Optional[np.ndarray] = None
-#         self.system_indices: Dict[str, np.ndarray] = {}
-#         self.reference_structure = None
-#         self.ca_indices = None
-
-#     def initialize_reference(self, reference_pdb: str) -> None:
-#         """
-#         Initialize the reference structure for alignment.
-        
-#         Args:
-#         reference_pdb (str): Path to reference PDB file
-#         """
-#         self.reference_structure = md.load_pdb(reference_pdb)
-#         self.ca_indices = self.reference_structure.topology.select('name CA')
+        Args:
+        reference_pdb (str): Path to reference PDB file
+        """
+        self.reference_structure = md.load_pdb(reference_pdb)
+        self.ca_indices = self.reference_structure.topology.select('name CA')
 
 def find_input_systems(base_dir: str) -> List[SystemConfig]:
     """
@@ -392,56 +369,38 @@ def convert_gromacs_to_amber(system: SystemConfig, output_dir: str) -> None:
         
         # Define output files with absolute paths
         amber_prmtop = os.path.join(system_dir, f"{system.system_name}.prmtop")
-        amber_rst7 = os.path.join(system_dir, f"{system.system_name}.rst7")
+        amber_rst7 = os.path.join(system_dir, f"{system.system_name}.rst7")  # Standard Amber restart
         pdb_file = os.path.join(system_dir, f"{system.system_name}.pdb")
         
-        # Save Amber files
+        # Save files using ParmEd's built-in writers
         print("Saving Amber topology file...")
         gromacs.save(amber_prmtop, format='amber')
         
         print("Saving Amber restart file...")
         gromacs.save(amber_rst7, format='rst7')
         
-        # # Save PDB with specific formatting options
-        # print("Saving PDB file...")
-        # # Renumber atoms sequentially starting from 1
-        # for i, atom in enumerate(gromacs.atoms):
-        #     atom.number = i + 1
-        
-        # Save PDB using ParmEd's native save method
-        # gromacs.save(pdb_file, format='pdb', renumber=True)
+        print("Saving PDB file...")
+        gromacs.save(pdb_file, format='pdb')
         
         # Update system config with absolute paths
         system.amber_prmtop = os.path.abspath(amber_prmtop)
         system.amber_inpcrd = os.path.abspath(amber_rst7)
-        # system.pdb_path = os.path.abspath(pdb_file)
+        system.pdb_path = os.path.abspath(pdb_file)
         
         print(f"Files saved successfully:")
         print(f"  Topology: {system.amber_prmtop}")
         print(f"  Restart:  {system.amber_inpcrd}")
-        # print(f"  PDB:      {system.pdb_path}")
+        print(f"  PDB:      {system.pdb_path}")
         
-        # Verify PDB file is readable by MDTraj
-        # try:
-        #     test_load = md.load(system.pdb_path)
-        #     print(f"Successfully verified PDB file can be loaded by MDTraj")
-        # except Exception as e:
-        #     print(f"Warning: Generated PDB file may have issues: {str(e)}")
-        #     print("Attempting to fix PDB format...")
-            
-        #     # If ParmEd PDB fails, try using MDTraj to save the PDB
-        #     temp_traj = md.load(system.amber_inpcrd, top=system.amber_prmtop)
-        #     temp_traj.save_pdb(pdb_file)
-        #     print("Resaved PDB file using MDTraj")
-            
     except Exception as e:
         print(f"Error during conversion: {str(e)}")
         print(f"Detailed error: {type(e).__name__}: {str(e)}")
+        print("Using existing topology if available")
+        
         if hasattr(e, '__traceback__'):
             import traceback
             print("Full traceback:")
             traceback.print_tb(e.__traceback__)
-        raise
 
     end_time = time.time()
     print(f"Conversion complete. Time taken: {end_time - start_time:.2f} seconds")
@@ -559,8 +518,8 @@ def run_seed_simulation(simulation: omma.Simulation,
     simulation.step(2000)
     simulation.integrator.setStepSize(0.002*unit.picoseconds)
 
-    simulation.reporters.append(omma.DCDReporter(dcd_file, 500))
-    simulation.reporters.append(omma.StateDataReporter(log_file, 500, 
+    simulation.reporters.append(omma.DCDReporter(dcd_file, 5000))
+    simulation.reporters.append(omma.StateDataReporter(log_file, 5000, 
                                                      step=True, 
                                                      potentialEnergy=True, 
                                                      temperature=True,
@@ -624,14 +583,14 @@ def load_trajectory_chunk(args):
     Helper function to load a trajectory chunk in parallel.
     
     Args:
-        args (tuple): (dcd_file, amber_prmtop, ca_indices)
+        args (tuple): (dcd_file, pdb_path, ca_indices)
     
     Returns:
         md.Trajectory or None: Loaded trajectory or None if loading fails
     """
-    dcd_file, amber_prmtop, ca_indices = args
+    dcd_file, pdb_path, ca_indices = args
     try:
-        traj = md.load(dcd_file, top=amber_prmtop, atom_indices=ca_indices)
+        traj = md.load(dcd_file, top=pdb_path, atom_indices=ca_indices)
         print(f"Successfully loaded trajectory: {dcd_file}")
         return traj
     except Exception as e:
@@ -656,18 +615,18 @@ def combine_trajectories(systems: List[SystemConfig], cycle: int, source_dir: st
     start_idx = 0
     
     # Create process pool for parallel loading
-    with multiprocessing.Pool(processes=min(multiprocessing.cpu_count(), 4)) as pool:
+    with multiprocessing.Pool(processes=min(multiprocessing.cpu_count(), 8)) as pool:
         
         for system in systems:
             print(f"\nProcessing trajectories for {system.system_name}")
             
             # Ensure we have absolute paths
-            if not os.path.isabs(system.amber_prmtop):
-                system.amber_prmtop = os.path.abspath(system.amber_prmtop)
-            if not os.path.exists(system.amber_prmtop):
-                raise OSError(f"prmtop file not found: {system.amber_prmtop}")
+            if not os.path.isabs(system.pdb_path):
+                system.pdb_path = os.path.abspath(system.pdb_path)
+            if not os.path.exists(system.pdb_path):
+                raise OSError(f"PDB file not found: {system.pdb_path}")
                 
-            print(f"Using prmtop file: {system.amber_prmtop}")
+            print(f"Using PDB file: {system.pdb_path}")
             print(f"CA indices: {system.ca_indices}")
             
             # Create list of trajectory files using absolute paths
@@ -708,7 +667,7 @@ def combine_trajectories(systems: List[SystemConfig], cycle: int, source_dir: st
             
             try:
                 # Prepare arguments for parallel loading
-                load_args = [(dcd, system.amber_prmtop, system.ca_indices) for dcd in dcd_files]
+                load_args = [(dcd, system.pdb_path, system.ca_indices) for dcd in dcd_files]
                 
                 # Load trajectories in parallel
                 trajectories = pool.map(load_trajectory_chunk, load_args)
@@ -753,34 +712,35 @@ def combine_trajectories(systems: List[SystemConfig], cycle: int, source_dir: st
     print(f"Final combined coordinates shape: {combined_coords.shape}")
     return combined_coords, system_indices
 
-def perform_shared_pca(coords: np.ndarray) -> Tuple[PCA, np.ndarray]:
+
+def perform_shared_pca(coords: np.ndarray, residue_list: np.ndarray) -> Tuple[PCA, np.ndarray]:
     """
-    Perform PCA on combined coordinates.
+    Perform PCA on combined coordinates for specified residues only.
     
     Args:
     coords (np.ndarray): Combined coordinate array
+    residue_indices (np.ndarray): Indices of residues to include in PCA
     
     Returns:
     Tuple[PCA, np.ndarray]: PCA object and projections
     """
-    print("Performing PCA on combined coordinates...")
+    print("Performing PCA on combined coordinates for selected residues...")
     
-    # Calculate pairwise distances
-    n_atoms = coords.shape[1]
-    n_frames = coords.shape[0]
-    
-    # Create atom pairs array properly shaped for mdtraj
+    # Create atom pairs only for the selected residues
+    residue_indices = residue_list - 1  # Convert to 0-based indices
+    n_residues = len(residue_indices)
     pairs = []
-    for i in range(n_atoms):
-        for j in range(i + 1, n_atoms):
-            pairs.append([i, j])
+    for i in range(n_residues):
+        for j in range(i + 1, n_residues):
+            pairs.append([residue_indices[i], residue_indices[j]])
     atom_pairs = np.array(pairs)
     
-    print(f"Computing distances for {len(pairs)} atom pairs over {n_frames} frames...")
+    print(f"Computing distances for {len(pairs)} atom pairs between {n_residues} selected residues...")
+    n_frames = coords.shape[0]
     pairwise_distances = np.zeros((n_frames, len(pairs)))
     
     for i in range(n_frames):
-        traj_frame = md.Trajectory(xyz=coords[i].reshape(1, n_atoms, 3), 
+        traj_frame = md.Trajectory(xyz=coords[i].reshape(1, coords.shape[1], 3), 
                                  topology=None)
         pairwise_distances[i] = md.geometry.compute_distances(traj_frame, atom_pairs)[0]
     
@@ -788,9 +748,19 @@ def perform_shared_pca(coords: np.ndarray) -> Tuple[PCA, np.ndarray]:
     print("Fitting PCA...")
     pca = PCA(n_components=3)
     proj = pca.fit_transform(pairwise_distances)
-    print("PCA variance ratios:", pca.explained_variance_ratio_)
+    
+    # Print variance explained for selected residues
+    variance_ratios = pca.explained_variance_ratio_
+    print("\nPCA Results for selected residues:")
+    print(f"Number of residues included: {n_residues}")
+    print("Explained variance ratios:")
+    for i, ratio in enumerate(variance_ratios):
+        print(f"PC{i+1}: {ratio:.3f} ({ratio*100:.1f}%)")
+    print(f"Cumulative variance explained: {sum(variance_ratios)*100:.1f}%")
     
     return pca, proj
+
+
 def analyze_projections(proj: np.ndarray, system_indices: Dict[str, np.ndarray], cycle: int) -> Dict[str, np.ndarray]:
     """
     Analyze PCA projections and identify vertices across all systems using a global convex hull.
@@ -1059,14 +1029,14 @@ def track_trajectory_chunk(args):
     Helper function to track frames for a chunk of trajectories in parallel.
     
     Args:
-        args (tuple): (system_name, dcd_path, traj_id, amber_prmtop)
+        args (tuple): (system_name, dcd_path, traj_id, pdb_path)
         
     Returns:
         tuple: (traj_id, dcd_path, n_frames) or (traj_id, dcd_path, None) if loading fails
     """
-    system_name, dcd_path, traj_id, amber_prmtop = args
+    system_name, dcd_path, traj_id, pdb_path = args
     try:
-        traj = md.load(dcd_path, top=amber_prmtop)
+        traj = md.load(dcd_path, top=pdb_path)
         n_frames = traj.n_frames
         print(f"{system_name} - {traj_id}: {n_frames} frames from {dcd_path}")
         return (traj_id, dcd_path, n_frames)
@@ -1090,7 +1060,7 @@ def track_trajectory_frames(systems: List[SystemConfig], cycle: int, source_dir:
     cumulative_offset = 0
     
     # Create process pool for parallel tracking
-    with multiprocessing.Pool(processes=min(multiprocessing.cpu_count(), 4)) as pool:
+    with multiprocessing.Pool(processes=min(multiprocessing.cpu_count(), 16)) as pool:
         
         for system in systems:
             info = TrajectoryInfo(system_name=system.system_name)
@@ -1129,7 +1099,7 @@ def track_trajectory_frames(systems: List[SystemConfig], cycle: int, source_dir:
             print(f"\nProcessing {len(dcd_files)} trajectories for {system.system_name} in parallel...")
             
             # Prepare arguments for parallel processing
-            track_args = [(system.system_name, dcd_path, traj_id, system.amber_prmtop) 
+            track_args = [(system.system_name, dcd_path, traj_id, system.pdb_path) 
                          for traj_id, dcd_path in dcd_files]
             
             # Track frames in parallel
@@ -1222,9 +1192,9 @@ def save_system_vertices(system: SystemConfig, vertices: np.ndarray, cycle: int,
         
         # Load and process trajectories
         print("\nLoading trajectories...")
-        traj = md.load(dcd_files[0], top=system.amber_prmtop)
+        traj = md.load(dcd_files[0], top=system.pdb_path)
         for dcd in dcd_files[1:]:
-            traj = traj.join(md.load(dcd, top=system.amber_prmtop))
+            traj = traj.join(md.load(dcd, top=system.pdb_path))
         
         print(f"Loaded combined trajectory with {traj.n_frames} frames")
         
@@ -1250,7 +1220,7 @@ def save_system_vertices(system: SystemConfig, vertices: np.ndarray, cycle: int,
             traceback.print_exc()
         raise
 
-def process_cycles(systems: List[SystemConfig], num_cycles: int, source_dir: str) -> None:
+def process_cycles(systems: List[SystemConfig], num_cycles: int, source_dir: str, residue_list) -> None:
     """Process all cycles with proper CUDA initialization."""
     vis_dir = os.path.join(source_dir, 'visualizations')
     os.makedirs(vis_dir, exist_ok=True)
@@ -1260,7 +1230,7 @@ def process_cycles(systems: List[SystemConfig], num_cycles: int, source_dir: str
         gpu_info = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.total', '--format=csv,noheader,nounits'])
         gpu_memory = int(gpu_info)
         # More conservative estimate for CUDA overhead
-        max_concurrent = min(4, gpu_memory // 750)  # set to 16 for A100 | 750MB for BRD4 250MB for BPTI
+        max_concurrent = min(16, gpu_memory // 500)  # set to 16 for A100
     except:
         print("Warning: Could not determine GPU memory. Using default concurrency of 2.")
         max_concurrent = 2
@@ -1282,7 +1252,7 @@ def process_cycles(systems: List[SystemConfig], num_cycles: int, source_dir: str
             print(f"Combined coordinates shape: {coords.shape}")
             
             # Perform PCA and analyze projections
-            pca, proj = perform_shared_pca(coords)
+            pca, proj = perform_shared_pca(coords, residue_list)
             print("PCA completed, analyzing projections...")
             
             # Analyze projections to identify vertices
@@ -1327,7 +1297,7 @@ def process_cycles(systems: List[SystemConfig], num_cycles: int, source_dir: str
                         task = SimulationTask(
                             prmtop_file=system.amber_prmtop,
                             inpcrd_file=rst_file,
-                            steps=50000,
+                            steps=5000,
                             seed_index=j,
                             cycle=cycle,
                             system_name=system.system_name,
@@ -1373,11 +1343,12 @@ def main():
     
     # Get absolute paths for directories
     current_dir = os.getcwd()
-    base_input_dir = os.path.join(current_dir, "RW_10/BRD4")
-    base_output_dir = os.path.join(current_dir, "BRD4_FES_output_EQ_test")
+    base_input_dir = os.path.join(current_dir, "RW_10/BPTI")
+    base_output_dir = os.path.join(current_dir, "BPTI_FES_output_EQ_test")
 
+    # residues to perform PCA on
+    residue_list =  np.load('hdx_residues/all_hdx_residues.npz')["BPTI"]
 
-    residue_list =  np.load('hdx_residues/all_hdx_residues.npz')["BRD4"]
 
 
     print(f"Input directory: {base_input_dir}")
@@ -1413,20 +1384,18 @@ def main():
         convert_gromacs_to_amber(system, base_output_dir)
         
         # Initialize CA indices for this topology
-        if not os.path.exists(system.amber_prmtop):
-            raise OSError(f"PDB file not found: {system.amber_prmtop}")
+        if not os.path.exists(system.pdb_path):
+            raise OSError(f"PDB file not found: {system.pdb_path}")
             
-        # topology = md.load(system.amber_prmtop).topology
-        # Select CA atoms and every residues specified in residue_list
-        # Convert numpy array to a comma-separated string of residue numbers
-        # residue_string = " ".join(str(x) for x in residue_list)
-        system.ca_indices = get_ca_indices_from_prmtop(system.amber_prmtop, residue_list)
+        topology = md.load(system.pdb_path).topology
+        system.ca_indices = topology.select('name CA')
+        
         # Process trajectories - either convert XTC or run equilibration
         process_system_trajectories(system, base_output_dir)
     
     # Process all cycles using shared PCA space
     os.chdir(base_output_dir)
-    process_cycles(systems, num_cycles=3, source_dir=base_output_dir)
+    process_cycles(systems, num_cycles=3, source_dir=base_output_dir, residue_list=residue_list)
     
     overall_end_time = time.time()
     print("\nAll systems processed successfully.")
