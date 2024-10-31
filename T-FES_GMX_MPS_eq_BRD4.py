@@ -883,6 +883,10 @@ def analyze_projections(proj: np.ndarray, system_indices: Dict[str, np.ndarray],
     
     # Convert to sorted numpy array for consistency
     all_vertex_indices = np.array(sorted(list(all_vertex_indices)))
+
+    if len(all_vertex_indices) > 200:
+        # sample 200 vertices
+        all_vertex_indices = np.random.choice(all_vertex_indices, 200, replace=False)
     
     # Distribute vertices to their respective systems
     system_vertices = {}
