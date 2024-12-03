@@ -29,7 +29,7 @@ from contextlib import contextmanager
 import time
 import os
 
-num_threads = 14
+num_threads = 4
 
 
 def check_cuda_mps_status():
@@ -76,6 +76,42 @@ def initialize_cuda():
         print(f"Error initializing CUDA: {e}")
         return None, None
     
+
+def build_system_with_platform(prmtop: omma.AmberPrmtopFile, platform, properties):
+    """
+    Build the OpenMM simulation system with specific platform.
+    
+    Args:
+    prmtop (omma.AmberPrmtopFile): Amber topology file
+    platform (omm.Platform): OpenMM platform to use
+    properties (dict): Platform-specific properties
+    
+    Returns:
+    omma.Simulation: OpenMM simulation object
+    """
+    print("Building system...")
+    system = prmtop.createSystem(
+        nonbondedMethod=omma.PME,
+        nonbondedCutoff=1*unit.nanometer,
+        constraints=omma.HBonds
+    )
+    
+    integrator = omm.LangevinIntegrator(
+        300*unit.kelvin,
+        1/unit.picoseconds,
+        0.002*unit.picoseconds
+    )
+    
+    simulation = omma.Simulation(
+        prmtop.topology,
+        system,
+        integrator,
+        platform,
+        properties
+    )
+    
+    return simulation
+
 def build_system_with_platform(prmtop: omma.AmberPrmtopFile, platform, properties):
     """
     Build the OpenMM simulation system with specific platform and production settings.
@@ -109,42 +145,6 @@ def build_system_with_platform(prmtop: omma.AmberPrmtopFile, platform, propertie
         300*unit.kelvin,  # Temperature
         1.0/unit.picosecond,  # Friction coefficient (matches Gromacs tau-t)
         0.002*unit.picoseconds  # Timestep
-    )
-    
-    simulation = omma.Simulation(
-        prmtop.topology,
-        system,
-        integrator,
-        platform,
-        properties
-    )
-    
-    return simulation
-
-
-def build_system_with_platform(prmtop: omma.AmberPrmtopFile, platform, properties):
-    """
-    Build the OpenMM simulation system with specific platform.
-    
-    Args:
-    prmtop (omma.AmberPrmtopFile): Amber topology file
-    platform (omm.Platform): OpenMM platform to use
-    properties (dict): Platform-specific properties
-    
-    Returns:
-    omma.Simulation: OpenMM simulation object
-    """
-    print("Building system...")
-    system = prmtop.createSystem(
-        nonbondedMethod=omma.PME,
-        nonbondedCutoff=1*unit.nanometer,
-        constraints=omma.HBonds
-    )
-    
-    integrator = omm.LangevinIntegrator(
-        300*unit.kelvin,
-        1/unit.picoseconds,
-        0.002*unit.picoseconds
     )
     
     simulation = omma.Simulation(
@@ -320,11 +320,10 @@ def find_input_systems(base_dir: str) -> List[SystemConfig]:
         print(f"    Xtc: {system.xtc_file if system.xtc_file else 'Not found - will run equilibration'}")
     
     return systems
-    
+
 def convert_xtc_to_dcd(system: SystemConfig, output_dir: str) -> None:
     """
     Convert XTC trajectory to DCD format using MDTraj.
-    Only converts and saves the last 50% of frames.
     
     Args:
     system (SystemConfig): System configuration object
@@ -342,21 +341,14 @@ def convert_xtc_to_dcd(system: SystemConfig, output_dir: str) -> None:
         os.makedirs(eq_dir, exist_ok=True)
         
         # Load XTC with GRO topology
-        print("Loading trajectory...")
         traj = md.load(system.xtc_file, top=system.gro_file)
-        total_frames = traj.n_frames
-        start_frame = total_frames // 2  # Start from halfway point
-        
-        # Select only latter half of frames
-        traj = traj[start_frame:]
-        print(f"Using frames {start_frame} to {total_frames} ({traj.n_frames} frames)")
         
         # Save as DCD
         dcd_path = os.path.join(eq_dir, 'eq.dcd')
         traj.save_dcd(dcd_path)
         
         print(f"Successfully converted XTC to DCD: {dcd_path}")
-        print(f"Saved {traj.n_frames} frames (50% of original {total_frames} frames)")
+        print(f"Trajectory contains {traj.n_frames} frames")
         
     except Exception as e:
         print(f"Error converting XTC to DCD: {str(e)}")
@@ -367,7 +359,6 @@ def convert_xtc_to_dcd(system: SystemConfig, output_dir: str) -> None:
     
     end_time = time.time()
     print(f"Conversion complete. Time taken: {end_time - start_time:.2f} seconds")
-
 
 def setup_output_directories(base_output_dir: str, systems: List[SystemConfig]) -> None:
     """
@@ -1271,23 +1262,70 @@ def save_system_vertices(system: SystemConfig, vertices: np.ndarray, cycle: int,
             import traceback
             traceback.print_exc()
         raise
-
 def process_cycles(systems: List[SystemConfig], num_cycles: int, source_dir: str) -> None:
-    """Process all cycles with proper CUDA initialization."""
+    """Process all cycles with batched simulation handling."""
     vis_dir = os.path.join(source_dir, 'visualizations')
     os.makedirs(vis_dir, exist_ok=True)
     
-    # Determine optimal number of concurrent simulations based on available GPU memory
-    try:
-        gpu_info = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.total', '--format=csv,noheader,nounits'])
-        gpu_memory = int(gpu_info)
-        # More conservative estimate for CUDA overhead
-        max_concurrent = min(num_threads, gpu_memory // 750)  # set to 16 for A100 | 750MB for BRD4 250MB for BPTI
-    except:
-        print("Warning: Could not determine GPU memory. Using default concurrency of 2.")
-        max_concurrent = 2
+    def create_simulation_batches(tasks: List[SimulationTask], batch_size: int = 50) -> List[List[SimulationTask]]:
+        """Split simulation tasks into batches"""
+        return [tasks[i:i + batch_size] for i in range(0, len(tasks), batch_size)]
     
-    print(f"Running up to {max_concurrent} concurrent simulations")
+    def submit_batch_job(batch: List[SimulationTask], batch_id: int, cycle: int):
+        """Submit a batch job to SLURM"""
+        config_dir = os.path.join(source_dir, 'batch_configs')
+        log_dir = os.path.join(source_dir, 'logs', f'cycle_{cycle}')
+        os.makedirs(config_dir, exist_ok=True)
+        os.makedirs(log_dir, exist_ok=True)
+        
+        # Write batch configuration
+        config_path = os.path.join(config_dir, f'batch_{batch_id}_config.json')
+        with open(config_path, 'w') as f:
+            json.dump([vars(task) for task in batch], f, indent=2)
+        
+        # Create job script
+        job_script = f"""#!/bin/bash
+#SBATCH --job-name=FES_c{cycle}_b{batch_id}
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem-per-cpu=4G
+#SBATCH --time=2-00:00:00
+#SBATCH --partition=short
+#SBATCH --clusters=htc
+#SBATCH --output={log_dir}/slurm_%j.out
+#SBATCH --error={log_dir}/slurm_%j.err
+
+module load CUDA/12.0.0
+module load Anaconda3/2022.10
+source activate FES
+
+export OMP_NUM_THREADS=4
+export CUDA_MPS_PIPE_DIRECTORY=/tmp/nvidia-mps
+export CUDA_MPS_LOG_DIRECTORY=/tmp/nvidia-log
+
+# Start CUDA MPS
+nvidia-cuda-mps-control -d
+
+cd $SCRATCH
+WORK_DIR="${{SCRATCH}}/FES_batch_${{SLURM_JOB_ID}}"
+mkdir -p ${{WORK_DIR}}
+cd ${{WORK_DIR}}
+
+python {os.path.abspath('run_simulation_batch.py')} {config_path}
+
+# Cleanup
+echo quit | nvidia-cuda-mps-control
+cd $SCRATCH
+rm -rf ${{WORK_DIR}}
+"""
+        
+        job_script_path = config_path.replace('.json', '.sh')
+        with open(job_script_path, 'w') as f:
+            f.write(job_script)
+        
+        subprocess.run(['sbatch', job_script_path])
+        return job_script_path
     
     for cycle in range(1, num_cycles + 1):
         print(f"\n{'='*80}")
@@ -1361,15 +1399,32 @@ def process_cycles(systems: List[SystemConfig], num_cycles: int, source_dir: str
                         print(f"Error preparing simulation task for vertex {j}: {str(e)}")
                         continue
             
-            # Run all simulations in parallel
+            # Split tasks into batches and submit jobs
             if all_simulation_tasks:
-                print(f"\nRunning {len(all_simulation_tasks)} simulations in parallel...")
+                print(f"\nSubmitting batch jobs for {len(all_simulation_tasks)} simulations...")
                 start_time = time.time()
-                results = run_parallel_simulations(all_simulation_tasks, max_concurrent)
+                
+                batches = create_simulation_batches(all_simulation_tasks)
+                submitted_jobs = []
+                
+                for batch_id, batch in enumerate(batches):
+                    job_script = submit_batch_job(batch, batch_id, cycle)
+                    submitted_jobs.append(job_script)
+                    time.sleep(2)  # Avoid overwhelming scheduler
+                
+                print(f"Submitted {len(batches)} batch jobs")
+                
+                # Wait for all jobs to complete before proceeding to next cycle
+                while True:
+                    result = subprocess.run(['squeue', '-u', os.getenv('USER')], 
+                                         capture_output=True, text=True)
+                    if not any(f'FES_c{cycle}' in result.stdout for job in submitted_jobs):
+                        break
+                    time.sleep(300)  # Check every 5 minutes
+                
                 end_time = time.time()
-                successful = sum(1 for r in results if r)
-                print(f"Completed {successful}/{len(all_simulation_tasks)} simulations successfully")
-                print(f"Total simulation time: {end_time - start_time:.2f} seconds")
+                print(f"All batch jobs completed for cycle {cycle}")
+                print(f"Total cycle time: {end_time - start_time:.2f} seconds")
                 
         except Exception as e:
             print(f"Error processing cycle {cycle}: {str(e)}")
@@ -1395,11 +1450,11 @@ def main():
     
     # Get absolute paths for directories
     current_dir = os.getcwd()
-    base_input_dir = os.path.join(current_dir, "RW_10/BRD4")
-    base_output_dir = os.path.join(current_dir, "RW_11_FES_output/BRD4")
+    base_input_dir = os.path.join(current_dir, "RW_10/BPTI")
+    base_output_dir = os.path.join(current_dir, "RW_11_FES_output_batch/BPTI")
 
 
-    residue_list =  np.load('hdx_residues/all_hdx_residues.npz')["BRD4"]
+    residue_list =  np.load('hdx_residues/all_hdx_residues.npz')["BPTI"]
 
 
     print(f"Input directory: {base_input_dir}")

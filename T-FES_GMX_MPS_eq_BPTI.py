@@ -29,7 +29,7 @@ from contextlib import contextmanager
 import time
 import os
 
-num_threads = 14
+num_threads = 16
 
 
 def check_cuda_mps_status():
@@ -76,6 +76,42 @@ def initialize_cuda():
         print(f"Error initializing CUDA: {e}")
         return None, None
     
+
+def build_system_with_platform(prmtop: omma.AmberPrmtopFile, platform, properties):
+    """
+    Build the OpenMM simulation system with specific platform.
+    
+    Args:
+    prmtop (omma.AmberPrmtopFile): Amber topology file
+    platform (omm.Platform): OpenMM platform to use
+    properties (dict): Platform-specific properties
+    
+    Returns:
+    omma.Simulation: OpenMM simulation object
+    """
+    print("Building system...")
+    system = prmtop.createSystem(
+        nonbondedMethod=omma.PME,
+        nonbondedCutoff=1*unit.nanometer,
+        constraints=omma.HBonds
+    )
+    
+    integrator = omm.LangevinIntegrator(
+        300*unit.kelvin,
+        1/unit.picoseconds,
+        0.002*unit.picoseconds
+    )
+    
+    simulation = omma.Simulation(
+        prmtop.topology,
+        system,
+        integrator,
+        platform,
+        properties
+    )
+    
+    return simulation
+
 def build_system_with_platform(prmtop: omma.AmberPrmtopFile, platform, properties):
     """
     Build the OpenMM simulation system with specific platform and production settings.
@@ -109,42 +145,6 @@ def build_system_with_platform(prmtop: omma.AmberPrmtopFile, platform, propertie
         300*unit.kelvin,  # Temperature
         1.0/unit.picosecond,  # Friction coefficient (matches Gromacs tau-t)
         0.002*unit.picoseconds  # Timestep
-    )
-    
-    simulation = omma.Simulation(
-        prmtop.topology,
-        system,
-        integrator,
-        platform,
-        properties
-    )
-    
-    return simulation
-
-
-def build_system_with_platform(prmtop: omma.AmberPrmtopFile, platform, properties):
-    """
-    Build the OpenMM simulation system with specific platform.
-    
-    Args:
-    prmtop (omma.AmberPrmtopFile): Amber topology file
-    platform (omm.Platform): OpenMM platform to use
-    properties (dict): Platform-specific properties
-    
-    Returns:
-    omma.Simulation: OpenMM simulation object
-    """
-    print("Building system...")
-    system = prmtop.createSystem(
-        nonbondedMethod=omma.PME,
-        nonbondedCutoff=1*unit.nanometer,
-        constraints=omma.HBonds
-    )
-    
-    integrator = omm.LangevinIntegrator(
-        300*unit.kelvin,
-        1/unit.picoseconds,
-        0.002*unit.picoseconds
     )
     
     simulation = omma.Simulation(
@@ -320,11 +320,10 @@ def find_input_systems(base_dir: str) -> List[SystemConfig]:
         print(f"    Xtc: {system.xtc_file if system.xtc_file else 'Not found - will run equilibration'}")
     
     return systems
-    
+
 def convert_xtc_to_dcd(system: SystemConfig, output_dir: str) -> None:
     """
     Convert XTC trajectory to DCD format using MDTraj.
-    Only converts and saves the last 50% of frames.
     
     Args:
     system (SystemConfig): System configuration object
@@ -342,21 +341,14 @@ def convert_xtc_to_dcd(system: SystemConfig, output_dir: str) -> None:
         os.makedirs(eq_dir, exist_ok=True)
         
         # Load XTC with GRO topology
-        print("Loading trajectory...")
         traj = md.load(system.xtc_file, top=system.gro_file)
-        total_frames = traj.n_frames
-        start_frame = total_frames // 2  # Start from halfway point
-        
-        # Select only latter half of frames
-        traj = traj[start_frame:]
-        print(f"Using frames {start_frame} to {total_frames} ({traj.n_frames} frames)")
         
         # Save as DCD
         dcd_path = os.path.join(eq_dir, 'eq.dcd')
         traj.save_dcd(dcd_path)
         
         print(f"Successfully converted XTC to DCD: {dcd_path}")
-        print(f"Saved {traj.n_frames} frames (50% of original {total_frames} frames)")
+        print(f"Trajectory contains {traj.n_frames} frames")
         
     except Exception as e:
         print(f"Error converting XTC to DCD: {str(e)}")
@@ -367,7 +359,6 @@ def convert_xtc_to_dcd(system: SystemConfig, output_dir: str) -> None:
     
     end_time = time.time()
     print(f"Conversion complete. Time taken: {end_time - start_time:.2f} seconds")
-
 
 def setup_output_directories(base_output_dir: str, systems: List[SystemConfig]) -> None:
     """
@@ -1395,11 +1386,11 @@ def main():
     
     # Get absolute paths for directories
     current_dir = os.getcwd()
-    base_input_dir = os.path.join(current_dir, "RW_10/BRD4")
-    base_output_dir = os.path.join(current_dir, "RW_11_FES_output/BRD4")
+    base_input_dir = os.path.join(current_dir, "RW_10/BPTI")
+    base_output_dir = os.path.join(current_dir, "RW_11_FES_output/BPTI")
 
 
-    residue_list =  np.load('hdx_residues/all_hdx_residues.npz')["BRD4"]
+    residue_list =  np.load('hdx_residues/all_hdx_residues.npz')["BPTI"]
 
 
     print(f"Input directory: {base_input_dir}")
